@@ -1,7 +1,9 @@
-# netlify.toml  —  корень проекта desk-app/
 [build]
   publish = "www"
-  command = ""
+  command = "npm install --omit=dev"
+
+[build.environment]
+  NODE_VERSION = "22"
 
 [functions]
   directory = "netlify/functions"
