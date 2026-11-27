@@ -1,5 +1,5 @@
 /* www/sw.js — заменить вместе с www/index.html ОДНИМ коммитом (Add file → Upload files) */
-var CACHE = 'desk-run-v6';
+var CACHE = 'desk-run-v8';
 var ASSETS = [
   './',
   './index.html',
