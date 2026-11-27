@@ -7,7 +7,6 @@ var LS_USER = 'sbeg.user', LS_LOCAL = 'sbeg.board.local', LS_QUEUE = 'sbeg.queue
 var NAME_MIN = 2, NAME_MAX = 18;
 var NAME_RE = /^[\p{L}\p{N}][\p{L}\p{N} ._'-]{1,17}$/u;
 
-/* ---------- утилиты ---------- */
 function $(s, r) { return (r || document).querySelector(s); }
 function mk(tag, cls, html) { var e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); }
@@ -21,7 +20,6 @@ function validName(n) { return n.length >= NAME_MIN && n.length <= NAME_MAX && N
 function initials(n) { var p = n.split(' ').filter(Boolean); return ((p[0] || '?')[0] + (p[1] ? p[1][0] : '')).toUpperCase(); }
 function rid(n) { var a = 'abcdefghijkmnpqrstuvwxyz23456789', s = ''; for (var i = 0; i < n; i++) s += a[Math.floor(Math.random() * a.length)]; return s; }
 
-/* ---------- звук UI, подчинён общей кнопке 🔊 ---------- */
 var SFX = {
   ctx: null,
   muted: function () { try { return JSON.parse(localStorage.getItem('sbeg.mute')) === true; } catch (e) { return false; } },
@@ -39,11 +37,10 @@ var SFX = {
     } catch (e) {}
   },
   tap: function () { this.blip(660, 480, .05, .05); },
-  good: function () { this.blip(660, 990, .12, .07); setTimeout(this.blip.bind(this, 990, 1320, .14, .05), 90); },
+  good: function () { this.blip(660, 990, .12, .07); var self = this; setTimeout(function () { self.blip(990, 1320, .14, .05); }, 90); },
   bad: function () { this.blip(300, 150, .18, .07); }
 };
 
-/* ---------- сеть ---------- */
 function net(action, payload, query) {
   var url = API + '?action=' + encodeURIComponent(action) + (query || '');
   var opt = payload
@@ -58,13 +55,13 @@ function net(action, payload, query) {
   }).catch(function () { clearTimeout(timer); return { ok: false, code: 'offline' }; });
 }
 
-/* ---------- состояние ---------- */
 var S = {
   user: ls(LS_USER, null),
   online: true,
   board: null,
   tab: 'top',
   busy: false,
+  busyBoard: false,
   lastRun: 0,
   gateOpen: false,
   recover: false,
@@ -74,7 +71,6 @@ var S = {
 };
 if (S.user && (!S.user.name || !S.user.id)) S.user = null;
 
-/* ---------- локальный рейтинг (офлайн-запас) ---------- */
 function localBoard() { var b = ls(LS_LOCAL, null); return b && b.players ? b : { players: {}, runs: 0 }; }
 function localSubmit(run) {
   var b = localBoard(), k = nameKey(S.user.name), p = b.players[k];
@@ -99,7 +95,6 @@ function queueFlush() {
   });
 }
 
-/* ---------- DOM ---------- */
 var gate, board, toastBox, boardBtn, mePill;
 
 function buildUI() {
@@ -107,7 +102,6 @@ function buildUI() {
   css.rel = 'stylesheet'; css.href = 'social.css';
   document.head.appendChild(css);
 
-  /* ворота имени */
   gate = mk('div', '', '');
   gate.id = 'sxGate';
   gate.innerHTML =
@@ -125,7 +119,7 @@ function buildUI() {
         '<div class="sx-row" id="sxCodeRow" style="display:none;margin-bottom:10px">' +
           '<input class="sx-input" id="sxCode" type="text" maxlength="6" autocomplete="off" spellcheck="false" placeholder="Код доступа" aria-label="Код доступа">' +
         '</div>' +
-        '<button class="sx-btn" id="sxGo" type="button" disabled>ЗАНИЯТЬ ИМЯ</button>' +
+        '<button class="sx-btn" id="sxGo" type="button" disabled>ЗАНЯТЬ ИМЯ</button>' +
       '</div>' +
       '<div class="sx-links">' +
         '<button class="sx-link" id="sxRecover" type="button">🔑 У меня уже есть имя</button>' +
@@ -135,7 +129,6 @@ function buildUI() {
     '</div>';
   document.body.appendChild(gate);
 
-  /* таблица */
   board = mk('div', '', '');
   board.id = 'sxBoard';
   board.innerHTML =
@@ -157,7 +150,6 @@ function buildUI() {
 
   toastBox = mk('div', '', ''); toastBox.id = 'sxToast'; document.body.appendChild(toastBox);
 
-  /* кнопка в HUD */
   var right = $('.hud-right');
   if (right) {
     boardBtn = mk('button', 'icon-btn', '🏆');
@@ -167,7 +159,6 @@ function buildUI() {
     boardBtn.addEventListener('click', function () { SFX.unlock(); SFX.tap(); openBoard(); });
   }
 
-  /* профиль в меню */
   var panel = $('#menuOv .panel'), best = $('#bestLine');
   if (panel) {
     mePill = mk('div', 'sx-me', '');
@@ -176,10 +167,10 @@ function buildUI() {
     else panel.appendChild(mePill);
   }
 
-  /* обработчики ворот */
   var nameInput = $('#sxName'), go = $('#sxGo');
   nameInput.addEventListener('input', function () { S.available = false; renderGo(); scheduleCheck(); });
   nameInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); if (!go.disabled) go.click(); } });
+  $('#sxCode').addEventListener('input', renderGo);
   $('#sxCode').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); if (!go.disabled) go.click(); } });
   go.addEventListener('click', submitGate);
   $('#sxRecover').addEventListener('click', function () {
@@ -190,14 +181,14 @@ function buildUI() {
     $('#sxLead').innerHTML = S.recover
       ? 'Введи <b>имя</b> и <b>код доступа</b>, который показали при регистрации. Результаты и место в рейтинге сохранятся.'
       : 'Руководитель ведёт <b>рейтинг побегов</b>. Займи имя — оно будет <b>только твоим</b>, а результат попадёт в общую таблицу. Имя запомнится на этом устройстве.';
-    go.textContent = S.recover ? 'ВОЙТИ' : 'ЗАНИЯТЬ ИМЯ';
+    go.textContent = S.recover ? 'ВОЙТИ' : 'ЗАНЯТЬ ИМЯ';
     $('#sxChips').innerHTML = '';
-    setHint('', ''); renderGo();
+    setHint(S.recover ? 'Имя и код из шести символов' : '2–18 символов: буквы, цифры, пробел', '');
+    renderGo();
     if (S.recover) $('#sxCode').focus(); else nameInput.focus();
   });
   $('#sxBoard2').addEventListener('click', function () { SFX.unlock(); SFX.tap(); openBoard(); });
 
-  /* таблица */
   $('#sxClose').addEventListener('click', function () { SFX.tap(); closeBoard(); });
   $('#sxRefresh').addEventListener('click', function () { SFX.tap(); loadBoard(true); });
   board.addEventListener('click', function (e) { if (e.target === board) closeBoard(); });
@@ -212,7 +203,6 @@ function buildUI() {
     if (e.key === 'Escape' && board.classList.contains('on')) closeBoard();
   });
 
-  /* не пускаем в игру без имени */
   document.addEventListener('click', function (e) {
     var t = e.target;
     if (t && t.id === 'startBtn' && !S.user) { e.preventDefault(); e.stopPropagation(); openGate(); }
@@ -225,7 +215,6 @@ function buildUI() {
   }, true);
 }
 
-/* ---------- тосты ---------- */
 function toast(text, kind, ms) {
   var t = mk('div', 'sx-t ' + (kind || ''), text);
   toastBox.appendChild(t);
@@ -233,7 +222,6 @@ function toast(text, kind, ms) {
   setTimeout(function () { t.className += ' out'; setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 320); }, ms || 2800);
 }
 
-/* ---------- ворота ---------- */
 function setHint(text, kind) { var h = $('#sxHint'); h.textContent = text; h.className = 'sx-hint' + (kind ? ' ' + kind : ''); }
 function setMark(html) { $('#sxMark').innerHTML = html || ''; }
 function renderGo() {
@@ -254,8 +242,8 @@ function scheduleCheck() {
 function doCheck(n) {
   S.checkName = n;
   if (!S.online) {
-    var b = localBoard(), taken = !!b.players[nameKey(n)];
-    applyCheck(n, !taken, taken ? [n + ' 185', n + ' 2'] : [], true);
+    var b0 = localBoard(), taken0 = !!b0.players[nameKey(n)];
+    applyCheck(n, !taken0, taken0 ? [n + ' 185', n + ' 2'] : [], true);
     return;
   }
   net('check', null, '&name=' + encodeURIComponent(n)).then(function (r) {
@@ -276,14 +264,14 @@ function applyCheck(n, available, suggestions, local) {
   inp.classList.remove('ok', 'bad');
   if (available) {
     inp.classList.add('ok'); setMark('✅');
-    setHint(local ? 'Свободно locally — синхронизируем, когда сеть вернётся' : 'Имя свободно — забирай', local ? 'warn' : 'ok');
+    setHint(local ? 'Свободно на этом устройстве — синхронизируем при сети' : 'Имя свободно — забирай', local ? 'warn' : 'ok');
   } else {
     inp.classList.add('bad'); setMark('⛔');
     setHint('Имя уже занято. Попробуй одно из этих:', 'bad');
     var box = $('#sxChips'); box.innerHTML = '';
-    (suggestions || []).slice(0, 3).forEach(function (s) {
-      var c = mk('button', 'sx-chip', esc(s)); c.type = 'button';
-      c.addEventListener('click', function () { SFX.tap(); $('#sxName').value = s; S.available = false; renderGo(); scheduleCheck(); });
+    (suggestions || []).slice(0, 3).forEach(function (sg) {
+      var c = mk('button', 'sx-chip', esc(sg)); c.type = 'button';
+      c.addEventListener('click', function () { SFX.tap(); $('#sxName').value = sg; S.available = false; renderGo(); scheduleCheck(); });
       box.appendChild(c);
     });
   }
@@ -336,7 +324,6 @@ function openGate() {
 }
 function closeGate() { S.gateOpen = false; gate.classList.remove('on'); }
 
-/* ---------- профиль ---------- */
 function renderMe() {
   if (!mePill) return;
   if (!S.user) {
@@ -367,10 +354,9 @@ function renderMe() {
   });
 }
 
-/* ---------- таблица ---------- */
 function openBoard() { board.classList.add('on'); loadBoard(true); }
 function closeBoard() { board.classList.remove('on'); }
-function loadBoard(force) {
+function loadBoard() {
   if (S.busyBoard) return;
   S.busyBoard = true;
   $('#sxList').innerHTML = '<div class="sx-empty"><span class="sx-spin"></span><br><br>Собираем результаты по опенспейсу…</div>';
@@ -426,7 +412,6 @@ function renderBoard() {
     : '';
 }
 
-/* ---------- результаты забега ---------- */
 function num(txt) { var m = String(txt || '').replace(/[^\d]/g, ''); return m ? parseInt(m, 10) : 0; }
 function readRun(state) {
   var box = state === 'win' ? $('#statsWin') : $('#statsOver');
@@ -448,7 +433,6 @@ function readRun(state) {
   return out;
 }
 function showResult(res, run) {
-  var panel = res.local ? null : null;
   var host = document.body.dataset.state === 'win' ? $('#statsWin') : $('#statsOver');
   if (!host || !host.parentNode) return;
   var old = host.parentNode.querySelector('.sx-res'); if (old) old.parentNode.removeChild(old);
@@ -475,7 +459,7 @@ function finishRun(state) {
     return;
   }
   net('submit', Object.assign({ id: S.user.id, token: S.user.token }, run)).then(function (r) {
-    if (r.ok) { showResult(r, run); if (r.improved) SFX.good(); loadBoard(false); return; }
+    if (r.ok) { showResult(r, run); if (r.improved) SFX.good(); loadBoard(); return; }
     if (r.code === 'offline') { S.online = false; var lr = localSubmit(run); queuePush(run); showResult(lr, run); return; }
     if (r.code === 'unknown' || r.code === 'auth') {
       try { localStorage.removeItem(LS_USER); } catch (e) {}
@@ -487,7 +471,6 @@ function finishRun(state) {
   });
 }
 
-/* ---------- наблюдение за состоянием игры ---------- */
 function watch() {
   var prev = document.body.dataset.state;
   var mo = new MutationObserver(function () {
@@ -504,19 +487,14 @@ function watch() {
   mo.observe(document.body, { attributes: true, attributeFilter: ['data-state'] });
 }
 
-/* ---------- старт ---------- */
 function init() {
   buildUI(); renderMe(); watch();
   net('top', null, '&limit=1').then(function (r) {
     S.online = !!r.ok;
-    if (S.online) { queueFlush(); loadBoard(false); }
-    else if (S.user && !S.user.local) {
-      /* профиль есть, сети нет — играем локально, отправим позже */
-      S.online = false;
-    }
+    if (S.online) { queueFlush(); loadBoard(); }
     if (!S.user) setTimeout(openGate, 420);
   });
-  window.addEventListener('online', function () { S.online = true; queueFlush(); loadBoard(false); });
+  window.addEventListener('online', function () { S.online = true; queueFlush(); loadBoard(); });
   document.addEventListener('pointerdown', function () { SFX.unlock(); }, { once: true });
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
