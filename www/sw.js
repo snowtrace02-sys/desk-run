@@ -1,5 +1,5 @@
 /* www/sw.js */
-var CACHE = 'desk-run-v3';
+var CACHE = 'desk-run-v5';
 var ASSETS = [
   './',
   './index.html',
@@ -30,17 +30,15 @@ self.addEventListener('fetch', function (e) {
   if (e.request.method !== 'GET') return;
   var url = e.request.url;
 
-  /* рейтинг всегда из сети, никогда из кэша */
   if (url.indexOf('/api/') >= 0 || url.indexOf('.netlify/functions') >= 0) return;
 
-  /* скрипт рейтинга и его стили — сначала сеть, чтобы правки приходили сразу */
-  if (url.indexOf('social.js') >= 0 || url.indexOf('social.css') >= 0) {
+  if (url.indexOf('index.html') >= 0 || url.indexOf('social.js') >= 0 || url.indexOf('social.css') >= 0) {
     e.respondWith(
       fetch(e.request).then(function (res) {
         var copy = res.clone();
         caches.open(CACHE).then(function (c) { c.put(e.request, copy); });
         return res;
-      }).catch(function () { return caches.match(e.request); })
+      }).catch(function () { return caches.match(e.request).then(function (h) { return h || caches.match('./index.html'); }); })
     );
     return;
   }
