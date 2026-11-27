@@ -1,5 +1,5 @@
-/* www/sw.js */
-var CACHE = 'desk-run-v5';
+/* www/sw.js — заменить вместе с www/index.html ОДНИМ коммитом (Add file → Upload files) */
+var CACHE = 'desk-run-v6';
 var ASSETS = [
   './',
   './index.html',
@@ -38,7 +38,9 @@ self.addEventListener('fetch', function (e) {
         var copy = res.clone();
         caches.open(CACHE).then(function (c) { c.put(e.request, copy); });
         return res;
-      }).catch(function () { return caches.match(e.request).then(function (h) { return h || caches.match('./index.html'); }); })
+      }).catch(function () {
+        return caches.match(e.request).then(function (h) { return h || caches.match('./index.html'); });
+      })
     );
     return;
   }
